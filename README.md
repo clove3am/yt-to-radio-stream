@@ -207,7 +207,7 @@ The tag must look like `v1.2.3` (an optional prerelease suffix such as `v1.2.3-r
 - `ghcr.io/clove3am/yt-to-radio-stream:1.2`
 - `ghcr.io/clove3am/yt-to-radio-stream:1`
 - `ghcr.io/clove3am/yt-to-radio-stream:latest` for stable tags
-- `ghcr.io/clove3am/yt-to-radio-stream:yt-dlp-2026.11.08` for automatic yt-dlp rebuilds
+- `ghcr.io/clove3am/yt-to-radio-stream:yt-dlp-2026.10.26` for automatic yt-dlp rebuilds
 
 Prerelease tags do not update `major`, `major.minor` or `latest`.
 
