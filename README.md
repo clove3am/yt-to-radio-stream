@@ -1,5 +1,7 @@
 # YT Radio
 
+[![Build and publish container](https://github.com/clove3am/yt-to-radio-stream/actions/workflows/release.yml/badge.svg)](https://github.com/clove3am/yt-to-radio-stream/actions/workflows/release.yml)
+
 Turn public **YouTube Live** streams into continuous **AAC internet radio** streams, managed from a small web dashboard.
 
 Each station runs its own pipeline:
@@ -200,21 +202,21 @@ git push origin v1.0.0
 
 The tag must look like `v1.2.3` (an optional prerelease suffix such as `v1.2.3-rc1` is allowed). The workflow publishes multi-architecture images for `linux/amd64` and `linux/arm64`:
 
-- `ghcr.io/<owner>/<repo>:1.2.3`
-- `ghcr.io/<owner>/<repo>:1.2`
-- `ghcr.io/<owner>/<repo>:1`
-- `ghcr.io/<owner>/<repo>:latest` for stable tags
+- `ghcr.io/clove3am/yt-to-radio-stream:1.2.3`
+- `ghcr.io/clove3am/yt-to-radio-stream:1.2`
+- `ghcr.io/clove3am/yt-to-radio-stream:1`
+- `ghcr.io/clove3am/yt-to-radio-stream:latest` for stable tags
 
 Prerelease tags do not update `major`, `major.minor` or `latest`.
 
 To run the published image instead of building locally:
 
 ```bash
-docker pull ghcr.io/<owner>/<repo>:latest
-RADIO_IMAGE=ghcr.io/<owner>/<repo>:latest docker compose up -d --no-build
+docker pull ghcr.io/clove3am/yt-to-radio-stream:latest
+RADIO_IMAGE=ghcr.io/clove3am/yt-to-radio-stream:latest docker compose up -d --no-build
 ```
 
-Add `RADIO_IMAGE=...` to `.env` to make that persistent. GHCR packages are private by default even for public repositories; change the package visibility in the GitHub package settings if anonymous pulls are intended. For a private package, log in first with a PAT that has `read:packages`:
+Add `RADIO_IMAGE=...` to `.env` to make that persistent. Package visibility is controlled in GitHub package settings. If the package is private, log in first with a PAT that has `read:packages`:
 
 ```bash
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin
