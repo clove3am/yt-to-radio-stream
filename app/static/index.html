@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070a0f">
+  <meta name="description" content="Turn YouTube Live streams into continuous internet radio streams.">
+  <title>YT Radio — YouTube Live to web radio</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <span class="orb orb-one"></span>
+    <span class="orb orb-two"></span>
+    <span class="orb orb-three"></span>
+    <span class="grid-glow"></span>
+  </div>
+
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="/" aria-label="YT Radio home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M8 12.5a9 9 0 0 1 0 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M5 9.5a13.5 13.5 0 0 1 0 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" opacity=".55"/>
+            <rect x="15" y="10.5" width="11" height="11" rx="2.4" fill="currentColor"/>
+            <path d="m20.2 13.9 3.2 2.1-3.2 2.1v-4.2Z" fill="#160d05"/>
+          </svg>
+        </span>
+        <span class="brand-copy">
+          <span class="brand-name">YT Radio</span>
+          <span class="brand-tag">Live stream relay</span>
+        </span>
+      </a>
+
+      <div class="topbar-actions">
+        <span class="engine-chip" id="engine-chip" data-state="pending" title="Stream engine status">
+          <span class="engine-dot" aria-hidden="true"></span>
+          <span id="engine-label">Connecting</span>
+        </span>
+        <button type="button" class="btn btn-primary" id="open-add">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+          </svg>
+          <span>Add station</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="eyebrow-line"></span> YouTube Live → internet radio</p>
+        <h1>Put your live streams<br><span class="accent">on the air.</span></h1>
+        <p class="hero-sub">Add a public YouTube Live URL and get a continuous AAC stream that works in VLC, web players, and most internet radios.</p>
+      </div>
+      <div class="hero-readout" aria-label="Stream summary">
+        <div class="readout-item">
+          <span class="readout-value" id="stat-live">0</span>
+          <span class="readout-label">on air</span>
+        </div>
+        <span class="readout-divider" aria-hidden="true"></span>
+        <div class="readout-item">
+          <span class="readout-value" id="stat-listeners">0</span>
+          <span class="readout-label" id="stat-listeners-label">listeners</span>
+        </div>
+        <span class="readout-divider" aria-hidden="true"></span>
+        <div class="readout-item">
+          <span class="readout-value" id="stat-stations">0</span>
+          <span class="readout-label" id="stat-stations-label">stations</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="banner" id="engine-banner" hidden>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 8v5m0 3.2v.1M10.3 4.5 2.9 17.4A2 2 0 0 0 4.6 20h14.8a2 2 0 0 0 1.7-2.6L13.7 4.5a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <strong>Stream engine is reconnecting</strong>
+        <span id="engine-banner-text">Stations will come back automatically once Icecast is available.</span>
+      </div>
+    </div>
+
+    <section class="stations-section" aria-labelledby="stations-heading">
+      <div class="section-head">
+        <div class="section-heading">
+          <h2 id="stations-heading">Stations</h2>
+          <span class="section-note" id="station-count">0 stations</span>
+        </div>
+        <div class="section-actions">
+          <button type="button" class="btn btn-ghost btn-small" id="import-stations">Import</button>
+          <button type="button" class="btn btn-ghost btn-small" id="export-stations">Export</button>
+        </div>
+      </div>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <div id="station-grid" class="station-grid"></div>
+
+      <div id="empty-state" class="empty-state" hidden>
+        <div class="empty-art" aria-hidden="true">
+          <span class="empty-ring empty-ring-one"></span>
+          <span class="empty-ring empty-ring-two"></span>
+          <span class="empty-icon">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M7 12a10 10 0 0 1 0 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 9a15 15 0 0 1 0 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+              <rect x="14.5" y="10" width="12" height="12" rx="3" fill="currentColor"/>
+              <path d="m20 13.5 3.5 2.5-3.5 2.5v-5Z" fill="#160d05"/>
+            </svg>
+          </span>
+        </div>
+        <h3>No stations on the dial yet</h3>
+        <p>Add your first YouTube Live stream and it will appear here, ready to play.</p>
+        <button type="button" class="btn btn-primary" id="empty-add">Add your first station</button>
+      </div>
+    </section>
+
+    <section class="howto" aria-label="How it works">
+      <div class="howto-step">
+        <span class="step-num">01</span>
+        <div>
+          <h3>Add a live URL</h3>
+          <p>Paste a public YouTube Live video or channel live URL. Give the station a name.</p>
+        </div>
+      </div>
+      <div class="howto-step">
+        <span class="step-num">02</span>
+        <div>
+          <h3>Wait for “Live”</h3>
+          <p>YT Radio resolves the stream, copies YouTube's AAC audio, and connects it to the built-in Icecast server.</p>
+        </div>
+      </div>
+      <div class="howto-step">
+        <span class="step-num">03</span>
+        <div>
+          <h3>Play it anywhere</h3>
+          <p>Copy the stream URL into VLC, a hardware radio, or any app that accepts an HTTP audio stream.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <span>YT Radio · AAC</span>
+      <span>Built on yt-dlp, FFmpeg &amp; Icecast</span>
+    </div>
+  </footer>
+
+  <dialog class="modal" id="station-dialog" aria-labelledby="station-dialog-title">
+    <form class="modal-card" id="station-form" autocomplete="off">
+      <header class="modal-head">
+        <div>
+          <p class="modal-kicker">Station setup</p>
+          <h2 id="station-dialog-title">Add a station</h2>
+        </div>
+        <button type="button" class="icon-btn modal-close" data-close aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="modal-body">
+        <label class="field">
+          <span class="field-label">Station name</span>
+          <input id="station-name" name="name" type="text" maxlength="80" required placeholder="e.g. Al Jazeera English">
+          <span class="field-hint">Shown on the dashboard and sent to radio players.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">YouTube Live URL</span>
+          <input id="station-url" name="url" type="text" inputmode="url" required spellcheck="false" placeholder="https://www.youtube.com/watch?v=…">
+          <span class="field-hint">Public live streams and premieres only. Private or members-only streams need cookies.</span>
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">Audio format</span>
+            <select id="station-codec" name="codec">
+              <option value="aac" selected>AAC copy (best, ~130 kbps)</option>
+              <option value="aac_he">HE-AAC copy (49 kbps, always on)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Streaming mode</span>
+            <select id="station-mode" name="mode">
+              <option value="always" selected>Always on</option>
+              <option value="on_demand">On demand</option>
+            </select>
+          </label>
+        </div>
+
+        <p class="field-hint mode-hint" id="codec-hint">AAC-LC is copied from YouTube without re-encoding. The stream URL ends in .aac.</p>
+
+        <p class="field-hint mode-hint" id="mode-hint">Always-on stations stream even when nobody is listening.</p>
+
+        <label class="check-field check-field-wide" id="autostart-wrap">
+          <input id="station-autostart" type="checkbox" checked>
+          <span id="autostart-label">Start streaming now</span>
+        </label>
+
+        <p class="form-error" id="form-error" hidden></p>
+      </div>
+
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="station-submit">Add station</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="import-dialog" aria-labelledby="import-dialog-title">
+    <form class="modal-card" id="import-form">
+      <header class="modal-head">
+        <div>
+          <p class="modal-kicker">Stream data</p>
+          <h2 id="import-dialog-title">Import streams</h2>
+        </div>
+        <button type="button" class="icon-btn modal-close" data-close aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
+      <div class="modal-body">
+        <p class="confirm-message" id="import-summary"></p>
+        <label class="check-field check-field-wide">
+          <input id="import-replace" type="checkbox">
+          <span>Replace all existing stations</span>
+        </label>
+        <p class="field-hint" id="import-warning" hidden>Existing stations will be stopped and deleted before the imported stations are added.</p>
+        <p class="form-error" id="import-error" hidden></p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="import-submit">Import</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="modal modal-wide" id="logs-dialog" aria-labelledby="logs-dialog-title">
+    <div class="modal-card">
+      <header class="modal-head">
+        <div>
+          <p class="modal-kicker">Diagnostics</p>
+          <h2 id="logs-dialog-title">Station logs</h2>
+        </div>
+        <button type="button" class="icon-btn modal-close" data-close aria-label="Close dialog">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </header>
+      <div class="modal-body">
+        <div class="log-status" id="log-status">—</div>
+        <pre class="log-view" id="log-view">Loading…</pre>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="logs-copy">Copy logs</button>
+        <button type="button" class="btn btn-ghost" id="logs-refresh">Refresh</button>
+        <button type="button" class="btn btn-primary" data-close>Close</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog" class="modal-card">
+      <header class="modal-head">
+        <div>
+          <p class="modal-kicker">Please confirm</p>
+          <h2 id="confirm-title">Delete station?</h2>
+        </div>
+      </header>
+      <div class="modal-body">
+        <p class="confirm-message" id="confirm-message"></p>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok">Delete</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div class="toast-host" id="toast-host" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript>
+    <div class="noscript">YT Radio needs JavaScript enabled to manage stations.</div>
+  </noscript>
+</body>
+</html>
