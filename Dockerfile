@@ -3,6 +3,8 @@ FROM docker.io/denoland/deno:bin-${DENO_VERSION} AS deno
 
 FROM python:3.12-slim-bookworm
 
+ARG YTDLP_VERSION=""
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -26,7 +28,10 @@ RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && if [ -n "$YTDLP_VERSION" ]; then \
+        pip install --no-cache-dir "yt-dlp==$YTDLP_VERSION"; \
+    fi
 
 COPY app ./app
 COPY entrypoint.sh /entrypoint.sh

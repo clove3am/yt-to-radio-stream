@@ -4,13 +4,17 @@ on:
   push:
     tags:
       - "v*.*.*"
+  schedule:
+    # Check for a new yt-dlp release every six hours.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: ghcr-${{ github.ref }}
+  group: ghcr-publish
   cancel-in-progress: false
 
 jobs:
@@ -40,8 +44,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check for a new yt-dlp release
+        id: check
+        shell: bash
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION=$(curl -fsSL --retry 3 --retry-delay 2 \
+            https://pypi.org/pypi/yt-dlp/json | jq -r '.info.version')
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "Could not determine the latest yt-dlp version" >&2
+            exit 1
+          fi
+
+          SAFE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9A-Za-z_.-]/-/g')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "safe_version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
+
+          if docker buildx imagetools inspect "$IMAGE:yt-dlp-$SAFE_VERSION" >/dev/null 2>&1 \
+             && docker buildx imagetools inspect "$IMAGE:latest" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "yt-dlp $VERSION is already published." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Building for yt-dlp $VERSION." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Extract image metadata
         id: meta
+        if: steps.check.outputs.build == 'true'
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
@@ -49,19 +87,26 @@ jobs:
             org.opencontainers.image.title=YT Radio
             org.opencontainers.image.description=YouTube Live to AAC internet radio
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
-            type=semver,pattern={{major}},enable=${{ !contains(github.ref_name, '-') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
+            type=raw,value=yt-dlp-${{ steps.check.outputs.safe_version }},enable=${{ github.event_name != 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name != 'push' }}
 
       - name: Build and push
+        if: steps.check.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
+          build-args: |
+            YTDLP_VERSION=${{ steps.check.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.github.yt-radio.yt-dlp-version=${{ steps.check.outputs.version || 'unpinned' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

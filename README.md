@@ -30,6 +30,7 @@ The app, Icecast, FFmpeg and yt-dlp all live in one Docker container. The only e
 - **AAC passthrough** at source quality with no audio transcode
 - **HE-AAC passthrough** at ~49 kbps for low bandwidth, always-on only
 - Import/export all station definitions as JSON
+- Scheduled GHCR rebuilds when a new yt-dlp release appears on PyPI
 - Bundled Deno + yt-dlp EJS solver for modern YouTube JavaScript challenges
 - ICY headers (`icy-name`, `icy-genre`) for radio-player compatibility
 - Optional HTTP Basic auth for the dashboard/API
@@ -206,8 +207,30 @@ The tag must look like `v1.2.3` (an optional prerelease suffix such as `v1.2.3-r
 - `ghcr.io/clove3am/yt-to-radio-stream:1.2`
 - `ghcr.io/clove3am/yt-to-radio-stream:1`
 - `ghcr.io/clove3am/yt-to-radio-stream:latest` for stable tags
+- `ghcr.io/clove3am/yt-to-radio-stream:yt-dlp-2026.11.08` for automatic yt-dlp rebuilds
 
 Prerelease tags do not update `major`, `major.minor` or `latest`.
+
+### Automatic yt-dlp updates
+
+The same workflow checks PyPI for a new `yt-dlp` release every six hours. If the matching `yt-dlp-<version>` tag does not exist in GHCR, it builds the current `main` branch with that exact yt-dlp version and publishes both `latest` and the `yt-dlp-<version>` tag.
+
+This means `latest` is a rolling image that can be newer than the last semver release tag. Use a semver tag for a frozen application release, or `yt-dlp-<version>` to pin the yt-dlp build.
+
+Run the check manually with:
+
+```bash
+gh workflow run release.yml --repo clove3am/yt-to-radio-stream
+```
+
+To update a deployment:
+
+```bash
+docker compose pull radio
+docker compose up -d --no-build
+```
+
+Only use `--no-build` when `RADIO_IMAGE` is set to the GHCR image.
 
 To run the published image instead of building locally:
 
@@ -224,7 +247,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin
 
 ## Updating yt-dlp
 
-YouTube changes frequently; keeping yt-dlp current is the main maintenance task. Rebuild the image to pin a fresh copy:
+GHCR deployments update automatically when PyPI publishes a new yt-dlp version. For a local build, rebuild the image to pin a fresh copy:
 
 ```bash
 docker compose build --pull --no-cache
