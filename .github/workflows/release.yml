@@ -52,11 +52,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           VERSION=$(curl -fsSL --retry 3 --retry-delay 2 \
             https://pypi.org/pypi/yt-dlp/json | jq -r '.info.version')
           if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
@@ -67,6 +62,11 @@ jobs:
           SAFE_VERSION=$(printf '%s' "$VERSION" | sed 's/[^0-9A-Za-z_.-]/-/g')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "safe_version=$SAFE_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if docker buildx imagetools inspect "$IMAGE:yt-dlp-$SAFE_VERSION" >/dev/null 2>&1 \
              && docker buildx imagetools inspect "$IMAGE:latest" >/dev/null 2>&1; then
@@ -91,7 +91,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             type=semver,pattern={{major}},enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
-            type=raw,value=yt-dlp-${{ steps.check.outputs.safe_version }},enable=${{ github.event_name != 'push' }}
+            type=raw,value=yt-dlp-${{ steps.check.outputs.safe_version }},enable=${{ steps.check.outputs.safe_version != '' }}
             type=raw,value=latest,enable=${{ github.event_name != 'push' }}
 
       - name: Build and push

@@ -55,7 +55,7 @@
       <div class="hero-copy">
         <p class="eyebrow"><span class="eyebrow-line"></span> YouTube Live → internet radio</p>
         <h1>Put your live streams<br><span class="accent">on the air.</span></h1>
-        <p class="hero-sub">Add a public YouTube Live URL and get a continuous AAC stream that works in VLC, web players, and most internet radios.</p>
+        <p class="hero-sub">Add a public YouTube Live URL and get a continuous AAC or MP3 stream that works in VLC, web players, and most internet radios.</p>
       </div>
       <div class="hero-readout" aria-label="Stream summary">
         <div class="readout-item">
@@ -130,7 +130,7 @@
         <span class="step-num">02</span>
         <div>
           <h3>Wait for “Live”</h3>
-          <p>YT Radio resolves the stream, copies YouTube's AAC audio, and connects it to the built-in Icecast server.</p>
+          <p>YT Radio copies YouTube's AAC audio or transcodes MP3, then connects it to the built-in Icecast server.</p>
         </div>
       </div>
       <div class="howto-step">
@@ -145,7 +145,7 @@
 
   <footer class="footer">
     <div class="shell footer-inner">
-      <span>YT Radio · AAC</span>
+      <span>YT Radio · AAC / MP3</span>
       <span>Built on yt-dlp, FFmpeg &amp; Icecast</span>
     </div>
   </footer>
@@ -183,6 +183,8 @@
             <select id="station-codec" name="codec">
               <option value="aac" selected>AAC copy (best, ~130 kbps)</option>
               <option value="aac_he">HE-AAC copy (49 kbps, always on)</option>
+              <option value="mp3">MP3 128 kbps</option>
+              <option value="mp3_low">MP3 64 kbps</option>
             </select>
           </label>
           <label class="field">

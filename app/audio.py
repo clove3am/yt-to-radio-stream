@@ -13,25 +13,59 @@ SILENCE_SECONDS = 2.0
 
 
 class SilenceCache:
-    """Generate and cache a short AAC-LC silence clip.
+    """Generate and cache a short silence clip per codec.
 
     On-demand streams send a little silence while yt-dlp/FFmpeg tune in, so
     players establish playback instead of timing out waiting for headers.
-    HE-AAC stations are always-on, so this clip only needs to match AAC-LC.
+    HE-AAC stations are always-on, so this clip only needs AAC-LC and MP3.
     """
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._data: bytes | None = None
+        self._cache: dict[str, bytes] = {}
         self._lock = asyncio.Lock()
 
-    async def get(self) -> bytes:
-        if self._data is not None:
-            return self._data
+    async def get(self, codec: str) -> bytes:
+        cached = self._cache.get(codec)
+        if cached is not None:
+            return cached
 
         async with self._lock:
-            if self._data is not None:
-                return self._data
+            cached = self._cache.get(codec)
+            if cached is not None:
+                return cached
+
+            if codec in {"mp3", "mp3_low"}:
+                bitrate = 128 if codec == "mp3" else 64
+                output_args = [
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    f"{bitrate}k",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-write_xing",
+                    "0",
+                    "-id3v2_version",
+                    "0",
+                    "-f",
+                    "mp3",
+                ]
+            else:
+                output_args = [
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-f",
+                    "adts",
+                ]
 
             command = [
                 self.settings.ffmpeg_binary,
@@ -44,16 +78,7 @@ class SilenceCache:
                 "anullsrc=r=44100:cl=stereo",
                 "-t",
                 f"{SILENCE_SECONDS:g}",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-ar",
-                "44100",
-                "-ac",
-                "2",
-                "-f",
-                "adts",
+                *output_args,
                 "pipe:1",
             ]
             data = b""
@@ -83,5 +108,5 @@ class SilenceCache:
             except Exception as exc:  # noqa: BLE001 - fall back to silent wait
                 logger.warning("Could not generate tuning silence: %s", exc)
 
-            self._data = data
+            self._cache[codec] = data
             return data

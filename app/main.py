@@ -413,6 +413,8 @@ async def station_logs(station_id: int, request: Request) -> dict[str, object]:
 
 
 def _station_content_type(station) -> str:
+    if station.codec in {"mp3", "mp3_low"}:
+        return "audio/mpeg"
     return "audio/aacp" if station.codec == "aac_he" else "audio/aac"
 
 
@@ -428,13 +430,13 @@ def _client_key(request: Request) -> str:
 
 
 def _stream_station(db: Database, filename: str):
-    if not filename.endswith(".aac"):
+    if "." not in filename:
         raise HTTPException(status_code=404, detail="Not found.")
-    slug = filename[:-4]
-    if not SLUG_PATTERN.fullmatch(slug):
+    slug, extension = filename.rsplit(".", 1)
+    if extension not in {"aac", "mp3"} or not SLUG_PATTERN.fullmatch(slug):
         raise HTTPException(status_code=404, detail="Not found.")
     station = db.get_station_by_slug(slug)
-    if station is None:
+    if station is None or station.stream_extension != extension:
         raise HTTPException(status_code=404, detail="Not found.")
     return station
 
@@ -457,6 +459,8 @@ def _stream_response_headers(
     headers.setdefault("icy-name", _header_safe(station.name))
     headers.setdefault("icy-description", "YouTube Live radio")
     headers.setdefault("icy-genre", "Live")
+    if station.stream_bitrate:
+        headers.setdefault("icy-br", str(station.stream_bitrate))
     return headers
 
 
@@ -592,7 +596,7 @@ async def proxy_stream(filename: str, request: Request) -> Response:
                     background=BackgroundTask(lease.release),
                 )
 
-            silence = await request.app.state.silence_cache.get()
+            silence = await request.app.state.silence_cache.get(station.codec)
             return StreamingResponse(
                 _tuning_body(
                     manager,

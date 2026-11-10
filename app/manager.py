@@ -496,14 +496,18 @@ class StationManager:
     async def _run_pipeline(self, runtime: Runtime) -> str | None:
         station = runtime.station
         settings = self.settings
-        codec = station.codec if station.codec in {"aac", "aac_he"} else "aac"
+        valid_codecs = {"aac", "aac_he", "mp3", "mp3_low"}
+        codec = station.codec if station.codec in valid_codecs else "aac"
 
         if codec == "aac_he":
             format_selector = "worstaudio[ext=mp4]/worstaudio[ext=m4a]"
             content_type = "audio/aacp"
-        else:
+        elif codec == "aac":
             format_selector = "bestaudio[ext=mp4]/bestaudio[ext=m4a]"
             content_type = "audio/aac"
+        else:
+            format_selector = "bestaudio/best"
+            content_type = "audio/mpeg"
 
         ytdlp_command = [
             settings.ytdlp_binary,
@@ -533,16 +537,39 @@ class StationManager:
             "-vn",
         ]
 
-        ffmpeg_command += [
-            "-c:a",
-            "copy",
-            "-flush_packets",
-            "1",
-            "-f",
-            "adts",
-            "-content_type",
-            content_type,
-        ]
+        if codec in {"aac", "aac_he"}:
+            ffmpeg_command += [
+                "-c:a",
+                "copy",
+                "-flush_packets",
+                "1",
+                "-f",
+                "adts",
+                "-content_type",
+                content_type,
+            ]
+        else:
+            bitrate = 128 if codec == "mp3" else 64
+            ffmpeg_command += [
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                f"{bitrate}k",
+                "-ar",
+                "44100",
+                "-ac",
+                "2",
+                "-write_xing",
+                "0",
+                "-id3v2_version",
+                "0",
+                "-flush_packets",
+                "1",
+                "-f",
+                "mp3",
+                "-content_type",
+                "audio/mpeg",
+            ]
 
         ffmpeg_command += [
             "-ice_name",
@@ -617,6 +644,8 @@ class StationManager:
         codec_label = {
             "aac": "AAC (copy)",
             "aac_he": "HE-AAC (copy)",
+            "mp3": "MP3 128k (transcode)",
+            "mp3_low": "MP3 64k (transcode)",
         }[codec]
         self._append_log(
             runtime,

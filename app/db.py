@@ -82,7 +82,11 @@ class Database:
             )
             connection.execute(
                 "UPDATE stations SET codec = 'aac' "
-                "WHERE codec NOT IN ('aac', 'aac_he')"
+                "WHERE codec = 'aac_low'"
+            )
+            connection.execute(
+                "UPDATE stations SET codec = 'aac' "
+                "WHERE codec NOT IN ('aac', 'aac_he', 'mp3', 'mp3_low')"
             )
             connection.execute(
                 "UPDATE stations SET codec = 'aac' "

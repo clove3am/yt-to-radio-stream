@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .utils import normalize_youtube_url, slugify
 
-Codec = Literal["aac", "aac_he"]
+Codec = Literal["aac", "aac_he", "mp3", "mp3_low"]
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
 
@@ -26,8 +26,16 @@ class Station:
     created_at: str
 
     @property
+    def stream_extension(self) -> str:
+        return "mp3" if self.codec in {"mp3", "mp3_low"} else "aac"
+
+    @property
+    def stream_bitrate(self) -> int | None:
+        return {"mp3": 128, "mp3_low": 64}.get(self.codec)
+
+    @property
     def stream_path(self) -> str:
-        return f"/stream/{self.slug}.aac"
+        return f"/stream/{self.slug}.{self.stream_extension}"
 
 
 def _clean_name(value: str) -> str:

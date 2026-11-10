@@ -2,15 +2,15 @@
 
 [![Build and publish container](https://github.com/clove3am/yt-to-radio-stream/actions/workflows/release.yml/badge.svg)](https://github.com/clove3am/yt-to-radio-stream/actions/workflows/release.yml)
 
-Turn public **YouTube Live** streams into continuous **AAC internet radio** streams, managed from a small web dashboard.
+Turn public **YouTube Live** streams into continuous **AAC or MP3 internet radio** streams, managed from a small web dashboard.
 
 Each station runs its own pipeline:
 
 ```text
-YouTube Live ──▶ yt-dlp ──▶ FFmpeg (AAC copy) ──▶ Icecast
+YouTube Live ──▶ yt-dlp ──▶ FFmpeg (AAC copy / MP3) ──▶ Icecast
                                                                │
 Browser dashboard  ◀── FastAPI control UI / API                 │
-Stream players     ◀── GET /stream/<station>.aac  ◀──────────────┘
+Stream players     ◀── GET /stream/<station>.aac|mp3  ◀──────────┘
 ```
 
 The app, Icecast, FFmpeg and yt-dlp all live in one Docker container. The only exposed port is the web UI, which also proxies the radio streams, so a single port works behind a reverse proxy or over HTTPS.
@@ -29,8 +29,10 @@ The app, Icecast, FFmpeg and yt-dlp all live in one Docker container. The only e
 - Persistent station list — always-on stations resume after a container restart; on-demand stations return to standby
 - **AAC passthrough** at source quality with no audio transcode
 - **HE-AAC passthrough** at ~49 kbps for low bandwidth, always-on only
+- **MP3 128k / 64k** transcoding for players that require MP3
 - Import/export all station definitions as JSON
 - Scheduled GHCR rebuilds when a new yt-dlp release appears on PyPI
+- Dependabot updates for GitHub Actions, Python packages and Docker base images
 - Bundled Deno + yt-dlp EJS solver for modern YouTube JavaScript challenges
 - ICY headers (`icy-name`, `icy-genre`) for radio-player compatibility
 - Optional HTTP Basic auth for the dashboard/API
@@ -54,6 +56,8 @@ Copy the station's stream URL into any player that accepts an HTTP audio stream.
 ```text
 http://your-host:8080/stream/<station-slug>.aac
 ```
+
+MP3 stations use the same URL with `.mp3` instead.
 
 To stop:
 
@@ -104,14 +108,18 @@ To use an Icecast server you run yourself, set `ICECAST_MANAGED=false`, point `I
 
 ### Audio formats
 
-All stations use AAC passthrough: YT Radio selects a YouTube AAC track and remuxes it into ADTS without re-encoding. Every stream uses a `.aac` URL.
+AAC copy is the default and avoids audio conversion. MP3 is available for players and apps that require an MP3 stream.
 
-- **AAC copy (best)** — AAC-LC, roughly 130 kbps for most YouTube live streams. Supports always-on and on-demand.
+- **AAC copy (best)** — AAC-LC, roughly 130 kbps for most YouTube live streams. Always-on or on-demand.
 - **HE-AAC copy (49 kbps)** — YouTube's low-bandwidth HE-AAC track. Always-on only, because its profile cannot be safely spliced into the AAC-LC tuning placeholder used by on-demand mode.
+- **MP3 128k** — transcoded MP3 at 128 kbps. Always-on or on-demand. This is the MP3 match for AAC copy's bandwidth.
+- **MP3 64k** — transcoded MP3 at 64 kbps. Always-on or on-demand. This is the low-bandwidth MP3 option.
 
-There is no MP3 transcode. Both formats avoid CPU-heavy audio conversion; bandwidth follows YouTube's source track. If a player does not support AAC or HE-AAC, it cannot play these streams.
+Higher MP3 bitrates are intentionally not offered: the reference AAC stream is around 130 kbps, so 160–320 kbps MP3 would only add bandwidth.
 
-Existing stations from older versions are migrated automatically: old MP3/AAC-64k stations become AAC copy, and old always-on low-bandwidth stations become HE-AAC copy. Old `.mp3` URLs now return 404; there are no compatibility redirects.
+AAC streams use `.aac` URLs; MP3 streams use `.mp3`. The extension must match the station's current format; there are no compatibility redirects. Changing a station's codec changes its URL, so update saved presets.
+
+Existing codec values are migrated to the nearest supported format on startup. Old MP3 rows remain MP3 128k; old always-on AAC-64k stations become HE-AAC; on-demand AAC-64k stations become AAC copy; unsupported values become AAC copy.
 
 ### Always on vs on demand
 
@@ -120,7 +128,7 @@ Existing stations from older versions are migrated automatically: old MP3/AAC-64
 **On demand** only runs while listeners are connected:
 
 - The station is armed but idle; no yt-dlp or FFmpeg process runs and no YouTube bandwidth is used.
-- The first listener starts the pipeline. While it tunes in, YT Radio streams a short AAC-LC silence loop so players stay connected instead of timing out.
+- The first listener starts the pipeline. While it tunes in, YT Radio streams a short silence loop in the station's codec so players stay connected instead of timing out.
 - The first listener typically hears silence for 5–20 seconds before live audio begins.
 - When the last listener leaves, the pipeline stops after `ON_DEMAND_IDLE_SECONDS` (default 30). Set it to `0` to stop immediately.
 - The stream URL stays the same, and the station returns to standby after stopping.
@@ -217,6 +225,8 @@ The same workflow checks PyPI for a new `yt-dlp` release every six hours. If the
 
 This means `latest` is a rolling image that can be newer than the last semver release tag. Use a semver tag for a frozen application release, or `yt-dlp-<version>` to pin the yt-dlp build.
 
+Version-tag releases also refresh `latest` and the corresponding `yt-dlp-<version>` tag using the exact current yt-dlp release, so the yt-dlp tag always tracks the newest app build for that yt-dlp version.
+
 Run the check manually with:
 
 ```bash
@@ -231,6 +241,16 @@ docker compose up -d --no-build
 ```
 
 Only use `--no-build` when `RADIO_IMAGE` is set to the GHCR image.
+
+### Dependabot
+
+`.github/dependabot.yml` checks weekly for updates to:
+
+- GitHub Actions workflow dependencies
+- Python packages in `requirements.txt`
+- Docker base images (`python` and Deno)
+
+`yt-dlp` itself is ignored by Dependabot because the scheduled GHCR workflow handles it. Dependabot only opens pull requests; an image is not published until the change is merged and a tag is pushed, or until the next scheduled yt-dlp rebuild picks up `main`.
 
 To run the published image instead of building locally:
 
@@ -280,8 +300,8 @@ docker compose logs -f radio
 | **Retrying** with `Connection refused` | Icecast is restarting. The engine chip at the top shows its state; stations reconnect automatically. |
 | Engine offline | Run `docker compose logs radio`; verify internal port 8000 is not occupied by another process in the container network. |
 | No audio in VLC but the card says Live | Test with `ffplay http://host:8080/stream/<slug>.aac`, check firewall rules, and confirm the URL uses the correct host/port. |
-| AAC stream will not play | Use an AAC-capable player. There is no MP3 fallback. |
-| AAC station retries with `Requested format is not available` | The source has no usable AAC track; try another stream. |
+| AAC stream will not play | Select **MP3 128k** or **MP3 64k** for players/apps that require MP3. |
+| AAC station retries with `Requested format is not available` | The source has no usable AAC track; select an MP3 format. |
 | HE-AAC cannot be selected with On demand | By design. HE-AAC copy is always-on only. |
 | Listener count differs from Icecast | The dashboard counts unique client IPs; Icecast counts connections. Use the connection count shown beside it to spot duplicate client sessions. |
 | Container exits with a data permission error | A bind-mounted `./data` is not writable by UID 1000. Run `sudo chown -R 1000:1000 data`. |
@@ -306,7 +326,7 @@ All mutating requests from the UI include `X-Requested-With: yt-radio`. When `AP
 | `POST` | `/api/import` | Import `{stations, replace}` |
 | `GET` | `/healthz` | Engine health (public) |
 
-`codec` is `aac` (AAC-LC copy, source quality) or `aac_he` (HE-AAC copy, ~49 kbps). `aac_he` requires `on_demand: false`.
+`codec` is `aac` (AAC-LC copy), `aac_he` (HE-AAC copy, ~49 kbps), `mp3` (128 kbps) or `mp3_low` (64 kbps). `aac_he` requires `on_demand: false`; the other formats support both modes.
 
 Example:
 
@@ -320,7 +340,7 @@ curl -X POST http://localhost:8080/api/stations \
 ## How it works
 
 1. The FastAPI manager spawns one `yt-dlp` process per station (with Deno/EJS available for YouTube's JavaScript challenges), piping the best available audio into FFmpeg.
-2. FFmpeg copies the selected AAC profile and pushes it to an internal Icecast mount at `/stream/<slug>.aac`.
+2. FFmpeg copies the selected AAC profile or transcodes MP3, then pushes it to an internal Icecast mount at `/stream/<slug>.aac` or `.mp3`.
 3. The browser UI fetches Icecast's status JSON for source/listener state.
 4. Public listeners hit FastAPI's stream route, which proxies Icecast with ICY headers and disabled buffering.
 5. For on-demand stations, each stream request holds a listener lease. The first lease starts the pipeline; the last lease release schedules an idle stop.
@@ -331,9 +351,9 @@ Station status is one of `live`, `starting`, `standby` (on-demand, no active lis
 
 - Only public YouTube Live streams (and upcoming premieres) are supported. Private, members-only, and DRM-protected content will not work, even with cookies, in many cases.
 - This project does not bypass YouTube restrictions. Only stream content you have the rights to rebroadcast, and respect YouTube's terms of service.
-- Radio latency is typically 10–30 seconds due to live-edge buffering and AAC processing. This is not a low-latency monitor feed.
+- Radio latency is typically 10–30 seconds due to live-edge buffering and AAC/MP3 processing. This is not a low-latency monitor feed.
 - On-demand stations add 5–20 seconds of tuning at the start of the first listener's session; subsequent listeners join the running stream instantly.
-- AAC copy stations use roughly the YouTube source's audio bitrate; bandwidth scales with every listener.
+- AAC copy stations use roughly the YouTube source's audio bitrate; MP3 stations use 128 or 64 kbps. Bandwidth scales with every listener.
 - Listener counts are unique client IPs seen by the proxy. The card also shows raw connections when a client has opened more than one. Devices behind the same NAT/IP count as one listener; a reverse proxy must forward `X-Forwarded-For` for accurate counts.
 - A station's URL slug is generated from its name when it is created and stays stable when you rename it, so existing radio presets keep working.
 - Icecast is configured for up to 64 stations and 500 concurrent listeners. The app is designed to run as a **single** Uvicorn worker; do not scale replicas against the same data volume.
@@ -373,4 +393,5 @@ Dockerfile
 docker-compose.yml
 entrypoint.sh
 .github/workflows/release.yml
+.github/dependabot.yml
 ```

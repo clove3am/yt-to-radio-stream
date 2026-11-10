@@ -1,5 +1,4 @@
-ARG DENO_VERSION=2.9.8
-FROM docker.io/denoland/deno:bin-${DENO_VERSION} AS deno
+FROM docker.io/denoland/deno:bin-2.9.8 AS deno
 
 FROM python:3.12-slim-bookworm
 

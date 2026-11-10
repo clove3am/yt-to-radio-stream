@@ -399,8 +399,15 @@ function stationCard(station) {
   const name = escapeHtml(station.name);
   const initial = escapeHtml(Array.from(String(station.name).trim())[0] || "?");
   const meta = metaText(station, status);
-  const codec = station.codec === "aac_he" ? "aac_he" : "aac";
-  const codecLabel = codec === "aac_he" ? "HE-AAC 49k" : "AAC copy";
+  const codec = ["aac", "aac_he", "mp3", "mp3_low"].includes(station.codec)
+    ? station.codec
+    : "aac";
+  const codecLabel = {
+    aac: "AAC copy",
+    aac_he: "HE-AAC 49k",
+    mp3: "MP3 128k",
+    mp3_low: "MP3 64k",
+  }[codec];
   const formatLine = `${codecLabel}${
     station.on_demand ? ' <span class="dot-sep">·</span> On demand' : ""
   }`;
@@ -713,7 +720,11 @@ function openEditDialog(station) {
   state.editingId = station.id;
   els.stationName.value = station.name;
   els.stationUrl.value = station.url;
-  els.stationCodec.value = station.codec === "aac_he" ? "aac_he" : "aac";
+  els.stationCodec.value = ["aac", "aac_he", "mp3", "mp3_low"].includes(
+    station.codec,
+  )
+    ? station.codec
+    : "aac";
   els.stationMode.value = station.on_demand ? "on_demand" : "always";
   els.autostartWrap.hidden = true;
   updateCodecUI();
@@ -737,8 +748,16 @@ function updateCodecUI() {
       "HE-AAC 49k is copied from YouTube without re-encoding. Always-on only; the stream URL ends in .aac.";
   } else {
     onDemandOption.disabled = false;
-    els.codecHint.textContent =
-      "AAC-LC is copied from YouTube without re-encoding (about 130 kbps). Always-on or on-demand; the stream URL ends in .aac.";
+    if (codec === "mp3") {
+      els.codecHint.textContent =
+        "MP3 is transcoded at 128 kbps for apps that require MP3. Always-on or on-demand; the stream URL ends in .mp3.";
+    } else if (codec === "mp3_low") {
+      els.codecHint.textContent =
+        "MP3 is transcoded at 64 kbps for low-bandwidth MP3 playback. Always-on or on-demand; the stream URL ends in .mp3.";
+    } else {
+      els.codecHint.textContent =
+        "AAC-LC is copied from YouTube without re-encoding (about 130 kbps). Always-on or on-demand; the stream URL ends in .aac.";
+    }
   }
   updateModeUI();
 }
