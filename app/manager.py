@@ -269,6 +269,31 @@ class StationManager:
             and self._runtime_is_active(runtime)
         )
 
+    def request_pipeline_restart(self, runtime: Runtime) -> None:
+        """Restart a wedged pipeline without dropping listener demand."""
+
+        if self._runtimes.get(runtime.station.id) is not runtime:
+            return
+        if not self._runtime_is_active(runtime) or runtime.restart_requested:
+            return
+        runtime.restart_requested = True
+        asyncio.create_task(
+            self._restart_pipeline(runtime),
+            name=f"forced-restart-{runtime.station.slug}",
+        )
+
+    async def _restart_pipeline(self, runtime: Runtime) -> None:
+        async with self._lifecycle_lock:
+            if self._runtimes.get(runtime.station.id) is not runtime:
+                return
+            if not self._runtime_is_active(runtime):
+                return
+            self._append_log(
+                runtime,
+                "No audio from the Icecast source; restarting the pipeline.",
+            )
+            await self._terminate(runtime)
+
     def _cancel_idle_locked(self, runtime: Runtime) -> None:
         task = runtime.idle_task
         if task and not task.done() and task is not asyncio.current_task():

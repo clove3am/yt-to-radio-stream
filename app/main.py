@@ -42,6 +42,7 @@ logger = logging.getLogger("ytradio")
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+FIRST_AUDIO_TIMEOUT = 2.0
 # Headers worth preserving from Icecast when proxying a stream.
 UPSTREAM_HEADERS = (
     "icy-name",
@@ -499,6 +500,34 @@ async def _open_icecast_stream(
     return upstream
 
 
+async def _read_first_audio(
+    upstream: httpx.Response, timeout: float
+):
+    iterator = upstream.aiter_raw()
+    try:
+        chunk = await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+    except (TimeoutError, StopAsyncIteration, httpx.HTTPError):
+        with contextlib.suppress(Exception):
+            await iterator.aclose()
+        with contextlib.suppress(Exception):
+            await upstream.aclose()
+        return None, None
+    except asyncio.CancelledError:
+        with contextlib.suppress(Exception):
+            await iterator.aclose()
+        with contextlib.suppress(Exception):
+            await upstream.aclose()
+        raise
+
+    if not chunk:
+        with contextlib.suppress(Exception):
+            await iterator.aclose()
+        with contextlib.suppress(Exception):
+            await upstream.aclose()
+        return None, None
+    return chunk, iterator
+
+
 async def _relay_body(upstream: httpx.Response, slug: str, lease=None):
     bytes_sent = 0
     try:
@@ -530,29 +559,51 @@ async def _tuning_body(
     silence: bytes,
     lease,
 ):
-    """Stream silent tuning audio until the on-demand source is up."""
+    """Stream tuning audio until Icecast actually delivers audio."""
 
     upstream: httpx.Response | None = None
+    upstream_iterator = None
+    first_chunk: bytes | None = None
     interval = SILENCE_SECONDS if silence else 0.5
     started = time.monotonic()
     deadline = started + settings.on_demand_start_timeout
     tuning_bytes = 0
+    live_bytes = 0
+    empty_source_attempts = 0
 
     try:
         while upstream is None:
             if not manager.listener_allowed(lease.runtime):
                 return
 
-            upstream = await _open_icecast_stream(
+            candidate = await _open_icecast_stream(
                 client, settings, station, request_headers
             )
-            if upstream is not None:
-                logger.info(
-                    "Tuning stream %s connected to Icecast after %.1fs",
-                    station.slug,
-                    time.monotonic() - started,
+            if candidate is not None:
+                upstream = candidate
+                first, iterator = await _read_first_audio(
+                    candidate, FIRST_AUDIO_TIMEOUT
                 )
-                break
+                if first is not None:
+                    upstream_iterator = iterator
+                    first_chunk = first
+                    logger.info(
+                        "Tuning stream %s received audio after %.1fs",
+                        station.slug,
+                        time.monotonic() - started,
+                    )
+                    break
+
+                upstream = None
+                empty_source_attempts += 1
+                if empty_source_attempts == 1:
+                    logger.warning(
+                        "Icecast source for %s accepted the listener but "
+                        "sent no audio; keeping tuning silence",
+                        station.slug,
+                    )
+                if empty_source_attempts >= 3:
+                    manager.request_pipeline_restart(lease.runtime)
 
             if time.monotonic() >= deadline:
                 logger.warning(
@@ -567,9 +618,15 @@ async def _tuning_body(
                 yield silence
             await asyncio.sleep(interval)
 
-        async for chunk in upstream.aiter_raw():
-            if chunk:
-                yield chunk
+        if first_chunk is not None:
+            live_bytes += len(first_chunk)
+            yield first_chunk
+
+        if upstream_iterator is not None:
+            async for chunk in upstream_iterator:
+                if chunk:
+                    live_bytes += len(chunk)
+                    yield chunk
     except asyncio.CancelledError:
         raise
     except httpx.HTTPError as exc:
@@ -580,10 +637,12 @@ async def _tuning_body(
                 await upstream.aclose()
         await lease.release()
         logger.info(
-            "Tuning stream %s ended after %.1fs (%d tuning bytes)",
+            "Tuning stream %s ended after %.1fs "
+            "(%d tuning bytes, %d live bytes)",
             station.slug,
             time.monotonic() - started,
             tuning_bytes,
+            live_bytes,
         )
 
 
@@ -603,20 +662,6 @@ async def proxy_stream(filename: str, request: Request) -> Response:
 
     if station.on_demand:
         try:
-            upstream = await _open_icecast_stream(
-                client,
-                settings,
-                station,
-                _upstream_request_headers(request, allow_metadata=True),
-            )
-            if upstream is not None:
-                return StreamingResponse(
-                    _relay_body(upstream, station.slug, lease),
-                    status_code=200,
-                    headers=_stream_response_headers(station, upstream),
-                    background=BackgroundTask(lease.release),
-                )
-
             silence = await request.app.state.silence_cache.get(station.codec)
             return StreamingResponse(
                 _tuning_body(
