@@ -30,6 +30,7 @@ The app, Icecast, FFmpeg and yt-dlp all live in one Docker container. The only e
 - **AAC passthrough** at source quality with no audio transcode
 - **HE-AAC passthrough** at ~49 kbps for low bandwidth, always-on only
 - **MP3 128k / 64k** transcoding for players that require MP3
+- Synthesized hold music while on-demand stations tune in (or silence via `TUNING_AUDIO`)
 - Import/export all station definitions as JSON
 - Scheduled GHCR rebuilds when a new yt-dlp release appears on PyPI
 - Dependabot updates for GitHub Actions, Python packages and Docker base images
@@ -97,6 +98,7 @@ Copy `.env.example` to `.env`; Compose reads it automatically.
 | `APP_PASSWORD` | empty | Enables HTTP Basic auth when non-empty |
 | `ON_DEMAND_IDLE_SECONDS` | `30` | Grace period before an on-demand stream stops after its last listener |
 | `ON_DEMAND_START_TIMEOUT` | `75` | Max seconds a listener waits for an on-demand stream to tune in |
+| `TUNING_AUDIO` | `music` | On-demand tuning audio: `music` or `silence` |
 | `YTDLP_COOKIES_FILE` | `/data/cookies.txt` | Optional Netscape-format cookies file |
 | `YTDLP_EXTRA_ARGS` | empty | Extra yt-dlp arguments (shell-quoted) |
 | `LOG_LEVEL` | `info` | `debug`, `info` or `warning` |
@@ -128,8 +130,8 @@ Existing codec values are migrated to the nearest supported format on startup. O
 **On demand** only runs while listeners are connected:
 
 - The station is armed but idle; no yt-dlp or FFmpeg process runs and no YouTube bandwidth is used.
-- The first listener starts the pipeline. While it tunes in, YT Radio streams a short silence loop in the station's codec so players stay connected instead of timing out.
-- The first listener typically hears silence for 5–20 seconds before live audio begins.
+- The first listener starts the pipeline. While it tunes in, YT Radio streams a short synthesized hold-music loop in the station's codec so players stay connected instead of timing out.
+- The first listener hears the hold music for 5–20 seconds before live audio begins. Set `TUNING_AUDIO=silence` to use silence instead.
 - When the last listener leaves, the pipeline stops after `ON_DEMAND_IDLE_SECONDS` (default 30). Set it to `0` to stop immediately.
 - The stream URL stays the same, and the station returns to standby after stopping.
 
@@ -317,7 +319,7 @@ docker compose logs -f radio
 | --- | --- |
 | Station stays on **Tuning** | Open **Logs** on the card. yt-dlp may be waiting on a stream that is offline, private, or region-locked. |
 | On-demand station stays on **On demand** | Expected with zero listeners. Play the stream URL or click **Listen** to start it. |
-| First on-demand listener hears silence | The station is tuning. Live audio begins once yt-dlp/FFmpeg connects, usually within 5–20 seconds. |
+| First on-demand listener hears hold music | The station is tuning. Live audio begins once yt-dlp/FFmpeg connects, usually within 5–20 seconds. Set `TUNING_AUDIO=silence` if you prefer silence. |
 | `Sign in to confirm you're not a bot` | Add a cookies file (see above). |
 | `This live stream recording is not available` | The URL is not currently live or is unavailable in the container's region. |
 | **Retrying** with `Connection refused` | Icecast is restarting. The engine chip at the top shows its state; stations reconnect automatically. |
@@ -408,7 +410,7 @@ Icecast is started automatically on `127.0.0.1:8000`; the UI is on <http://local
 app/
   main.py       FastAPI routes, auth, stream proxy
   manager.py    per-station process supervision, demand leases and retry logic
-  audio.py      tuning-silence generation for on-demand listeners
+  audio.py      synthesized hold-music generation for on-demand listeners
   icecast.py    Icecast config generation, process lifecycle, stats
   db.py         SQLite persistence
   models.py     station models and request validation

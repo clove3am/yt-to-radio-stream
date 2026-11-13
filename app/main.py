@@ -25,7 +25,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from .audio import SILENCE_SECONDS, SilenceCache
+from .audio import TUNING_CLIP_SECONDS, TuningAudioCache
 from .config import Settings
 from .db import Database
 from .icecast import IcecastServer
@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
     await icecast.start()
     manager = StationManager(settings, db, icecast)
     await manager.startup()
-    silence_cache = SilenceCache(settings)
+    tuning_cache = TuningAudioCache(settings)
     stream_client = httpx.AsyncClient(
         timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0),
         limits=httpx.Limits(max_connections=200, max_keepalive_connections=20),
@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.icecast = icecast
     app.state.manager = manager
-    app.state.silence_cache = silence_cache
+    app.state.tuning_cache = tuning_cache
     app.state.stream_client = stream_client
 
     logger.info(
@@ -556,7 +556,7 @@ async def _tuning_body(
     settings: Settings,
     station,
     request_headers: dict[str, str],
-    silence: bytes,
+    tuning_clips: tuple[bytes, ...],
     lease,
 ):
     """Stream tuning audio until Icecast actually delivers audio."""
@@ -564,7 +564,8 @@ async def _tuning_body(
     upstream: httpx.Response | None = None
     upstream_iterator = None
     first_chunk: bytes | None = None
-    interval = SILENCE_SECONDS if silence else 0.5
+    interval = TUNING_CLIP_SECONDS if tuning_clips else 0.5
+    clip_index = 0
     started = time.monotonic()
     deadline = started + settings.on_demand_start_timeout
     tuning_bytes = 0
@@ -599,7 +600,7 @@ async def _tuning_body(
                 if empty_source_attempts == 1:
                     logger.warning(
                         "Icecast source for %s accepted the listener but "
-                        "sent no audio; keeping tuning silence",
+                        "sent no audio; keeping tuning audio",
                         station.slug,
                     )
                 if empty_source_attempts >= 3:
@@ -613,9 +614,11 @@ async def _tuning_body(
                 )
                 return
 
-            if silence:
-                tuning_bytes += len(silence)
-                yield silence
+            if tuning_clips:
+                clip = tuning_clips[clip_index % len(tuning_clips)]
+                clip_index += 1
+                tuning_bytes += len(clip)
+                yield clip
             await asyncio.sleep(interval)
 
         if first_chunk is not None:
@@ -662,7 +665,9 @@ async def proxy_stream(filename: str, request: Request) -> Response:
 
     if station.on_demand:
         try:
-            silence = await request.app.state.silence_cache.get(station.codec)
+            tuning_clips = await request.app.state.tuning_cache.get(
+                station.codec
+            )
             return StreamingResponse(
                 _tuning_body(
                     manager,
@@ -670,7 +675,7 @@ async def proxy_stream(filename: str, request: Request) -> Response:
                     settings,
                     station,
                     _upstream_request_headers(request, allow_metadata=False),
-                    silence,
+                    tuning_clips,
                     lease,
                 ),
                 status_code=200,

@@ -60,6 +60,7 @@ class Settings:
     log_level: str
     on_demand_idle_seconds: int
     on_demand_start_timeout: int
+    tuning_audio: str
 
     icecast_managed: bool
     icecast_host: str
@@ -127,6 +128,11 @@ class Settings:
 
         app_password = os.environ.get("APP_PASSWORD", "").strip() or None
 
+        tuning_audio = os.environ.get("TUNING_AUDIO", "music").strip().lower()
+        if tuning_audio not in {"music", "silence"}:
+            logger.warning("Ignoring invalid TUNING_AUDIO=%r", tuning_audio)
+            tuning_audio = "music"
+
         try:
             port = int(os.environ.get("PORT", "8080"))
         except ValueError:
@@ -150,6 +156,7 @@ class Settings:
             on_demand_start_timeout=_env_int(
                 "ON_DEMAND_START_TIMEOUT", 75, minimum=10, maximum=600
             ),
+            tuning_audio=tuning_audio,
             icecast_managed=_env_bool("ICECAST_MANAGED", True),
             icecast_host=os.environ.get("ICECAST_HOST", "127.0.0.1").strip()
             or "127.0.0.1",
