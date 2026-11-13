@@ -184,6 +184,29 @@ radio.example.com {
 }
 ```
 
+For stream reliability, do not apply `response_buffers`/`buffer_responses` to `/stream/*`, and exclude stream paths from `encode` if compression is enabled. YT Radio also sends `Incremental: ?1`, which Caddy 2.11+ uses to forward stream bodies immediately:
+
+```caddyfile
+radio.example.com {
+    encode {
+        match {
+            not path /stream/*
+        }
+        zstd gzip
+    }
+
+    handle /stream/* {
+        reverse_proxy 127.0.0.1:8080 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8080
+    }
+}
+```
+
 **nginx**
 
 ```nginx
@@ -304,6 +327,8 @@ docker compose logs -f radio
 | AAC station retries with `Requested format is not available` | The source has no usable AAC track; select an MP3 format. |
 | HE-AAC cannot be selected with On demand | By design. HE-AAC copy is always-on only. |
 | Listener count differs from Icecast | The dashboard counts unique client IPs; Icecast counts connections. Use the connection count shown beside it to spot duplicate client sessions. |
+| Proxy returns headers but no audio / stream ends after a few seconds | The reverse proxy is buffering or compressing the stream. Apply `flush_interval -1` to `/stream/*`, remove response buffering, and exclude streams from `encode`. |
+| MP3-only app gets no audio | Change the station format to **MP3 128k** or **MP3 64k** and update the saved URL from `.aac` to `.mp3`. |
 | Container exits with a data permission error | A bind-mounted `./data` is not writable by UID 1000. Run `sudo chown -R 1000:1000 data`. |
 
 ## API

@@ -446,9 +446,10 @@ def _stream_response_headers(
 ) -> dict[str, str]:
     headers: dict[str, str] = {
         "Content-Type": _station_content_type(station),
-        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Cache-Control": "no-cache, no-store, must-revalidate, no-transform",
         "Pragma": "no-cache",
         "Access-Control-Allow-Origin": "*",
+        "Incremental": "?1",
         "X-Accel-Buffering": "no",
     }
     if upstream is not None:
@@ -499,9 +500,11 @@ async def _open_icecast_stream(
 
 
 async def _relay_body(upstream: httpx.Response, slug: str, lease=None):
+    bytes_sent = 0
     try:
         async for chunk in upstream.aiter_raw():
             if chunk:
+                bytes_sent += len(chunk)
                 yield chunk
     except asyncio.CancelledError:
         raise
@@ -512,6 +515,10 @@ async def _relay_body(upstream: httpx.Response, slug: str, lease=None):
             await upstream.aclose()
         if lease is not None:
             await lease.release()
+        if bytes_sent == 0:
+            logger.warning("Stream relay %s ended without sending audio", slug)
+        else:
+            logger.info("Stream relay %s ended after %d bytes", slug, bytes_sent)
 
 
 async def _tuning_body(
@@ -527,7 +534,9 @@ async def _tuning_body(
 
     upstream: httpx.Response | None = None
     interval = SILENCE_SECONDS if silence else 0.5
-    deadline = time.monotonic() + settings.on_demand_start_timeout
+    started = time.monotonic()
+    deadline = started + settings.on_demand_start_timeout
+    tuning_bytes = 0
 
     try:
         while upstream is None:
@@ -538,6 +547,11 @@ async def _tuning_body(
                 client, settings, station, request_headers
             )
             if upstream is not None:
+                logger.info(
+                    "Tuning stream %s connected to Icecast after %.1fs",
+                    station.slug,
+                    time.monotonic() - started,
+                )
                 break
 
             if time.monotonic() >= deadline:
@@ -549,6 +563,7 @@ async def _tuning_body(
                 return
 
             if silence:
+                tuning_bytes += len(silence)
                 yield silence
             await asyncio.sleep(interval)
 
@@ -564,6 +579,12 @@ async def _tuning_body(
             with contextlib.suppress(Exception):
                 await upstream.aclose()
         await lease.release()
+        logger.info(
+            "Tuning stream %s ended after %.1fs (%d tuning bytes)",
+            station.slug,
+            time.monotonic() - started,
+            tuning_bytes,
+        )
 
 
 @app.get("/stream/{filename}", include_in_schema=False)
